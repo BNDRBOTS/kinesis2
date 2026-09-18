@@ -21,6 +21,82 @@ interface ReplicatePrediction {
 const REPLICATE_PROXY = "/api/replicate";
 const REPLICATE_API_BASE = "https://api.replicate.com/v1";
 
+function buildReplicateInput(params: GenerationParams): Record<string, unknown> {
+  const modelSlug = params.model.endpoint;
+  const input: Record<string, unknown> = {
+    prompt: params.prompt,
+  };
+
+  if (modelSlug.includes("minimax")) {
+    // minimax/video-01 uses first_frame_image
+    (input as any).first_frame_image = params.imageUrl;
+    if (params.durationSeconds) {
+      (input as any).duration = params.durationSeconds;
+    }
+  } else if (modelSlug.includes("wan-2.7")) {
+    // wan-video/wan-2.7-i2v uses first_frame, prompt, resolution, duration
+    (input as any).first_frame = params.imageUrl;
+    (input as any).resolution = "1080p";
+    if (params.durationSeconds) {
+      (input as any).duration = Math.min(Math.max(params.durationSeconds, 2), 15);
+    }
+    if (params.negativePrompt && params.model.supportsNegativePrompt) {
+      (input as any).negative_prompt = params.negativePrompt;
+    }
+    if (params.seed !== null && params.model.supportsSeed) {
+      (input as any).seed = params.seed;
+    }
+    if (params.aspectRatio) {
+      // Wan 2.7 resolution handling - aspect ratio derived from image, but we can keep
+      (input as any).aspect_ratio = params.aspectRatio;
+    }
+  } else if (modelSlug.includes("wan-2.1")) {
+    // wavespeedai/wan-2.1-i2v-720p uses image, prompt, aspect_ratio, seed
+    (input as any).image = params.imageUrl;
+    if (params.seed !== null && params.model.supportsSeed) {
+      (input as any).seed = params.seed;
+    }
+    if (params.negativePrompt && params.model.supportsNegativePrompt) {
+      (input as any).negative_prompt = params.negativePrompt;
+    }
+    if (params.aspectRatio) {
+      (input as any).aspect_ratio = params.aspectRatio;
+    }
+    // Duration via num_frames: 81 frames ~5s at 16fps
+    if (params.durationSeconds) {
+      const fps = 16;
+      (input as any).num_frames = Math.min(100, Math.max(5, Math.round(params.durationSeconds * fps)));
+      (input as any).frames_per_second = fps;
+    }
+  } else if (modelSlug.includes("wan")) {
+    // generic wan fallback
+    (input as any).image = params.imageUrl;
+    if (params.seed !== null) {
+      (input as any).seed = params.seed;
+    }
+    if (params.negativePrompt && params.model.supportsNegativePrompt) {
+      (input as any).negative_prompt = params.negativePrompt;
+    }
+    if (params.durationSeconds) {
+      (input as any).duration = params.durationSeconds;
+    }
+    if (params.aspectRatio) {
+      (input as any).aspect_ratio = params.aspectRatio;
+    }
+  } else {
+    // generic
+    (input as any).start_image = params.imageUrl;
+    if (params.durationSeconds) {
+      (input as any).duration = params.durationSeconds;
+    }
+    if (params.aspectRatio) {
+      (input as any).aspect_ratio = params.aspectRatio;
+    }
+  }
+
+  return input;
+}
+
 export async function submitReplicateJob(
   params: GenerationParams,
   apiKey: string
@@ -28,34 +104,9 @@ export async function submitReplicateJob(
   const modelSlug = params.model.endpoint;
   const targetPath = `/v1/models/${modelSlug}/predictions`;
 
-  const input: Record<string, unknown> = {
-    prompt: params.prompt,
-  };
-
-  if (modelSlug.includes("minimax")) {
-    input.first_frame_image = params.imageUrl;
-  } else if (modelSlug.includes("wan")) {
-    input.image = params.imageUrl;
-    if (params.seed !== null) {
-      input.seed = params.seed;
-    }
-    if (params.negativePrompt && params.model.supportsNegativePrompt) {
-      input.negative_prompt = params.negativePrompt;
-    }
-  } else {
-    input.start_image = params.imageUrl;
-  }
-
-  if (params.durationSeconds) {
-    input.duration = params.durationSeconds;
-  }
-
-  if (params.aspectRatio) {
-    input.aspect_ratio = params.aspectRatio;
-  }
+  const input = buildReplicateInput(params);
 
   let res: Response;
-  let usedProxy = false;
 
   try {
     res = await apiFetch(REPLICATE_PROXY, {
@@ -66,7 +117,6 @@ export async function submitReplicateJob(
       },
       body: JSON.stringify({ targetPath, input }),
     });
-    usedProxy = true;
   } catch {
     try {
       res = await apiFetch(`${REPLICATE_API_BASE}${targetPath}`, {
@@ -85,14 +135,12 @@ export async function submitReplicateJob(
       ) {
         throw new Error(
           "Replicate API request failed. Deploy to Vercel to enable the proxy, " +
-            "or use fal.ai/Luma models which work directly in browser."
+            "or use fal.ai models which work via /api/fal proxy."
         );
       }
       throw err;
     }
   }
-
-  void usedProxy;
 
   let json: ReplicatePrediction;
   try {
@@ -100,13 +148,13 @@ export async function submitReplicateJob(
   } catch {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `Replicate returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 200)}`
+      `Replicate returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 400)}`
     );
   }
 
   if (!json.id) {
     throw new Error(
-      `Replicate did not return a prediction ID: ${JSON.stringify(json).slice(0, 300)}`
+      `Replicate did not return a prediction ID: ${JSON.stringify(json).slice(0, 500)}`
     );
   }
 
@@ -160,12 +208,12 @@ export async function pollReplicateJob(
     } catch {
       const text = await res.text().catch(() => "");
       throw new Error(
-        `Replicate returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 200)}`
+        `Replicate returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 400)}`
       );
     }
 
     if (prediction.logs && onProgress) {
-      onProgress(prediction.logs.slice(-200));
+      onProgress(prediction.logs.slice(-300));
     }
 
     if (prediction.status === "succeeded") {
@@ -173,7 +221,7 @@ export async function pollReplicateJob(
       if (typeof output === "string") return output;
       if (Array.isArray(output) && output.length > 0) return output[0];
       throw new Error(
-        `Replicate succeeded but no output URL: ${JSON.stringify(prediction).slice(0, 300)}`
+        `Replicate succeeded but no output URL: ${JSON.stringify(prediction).slice(0, 500)}`
       );
     }
 

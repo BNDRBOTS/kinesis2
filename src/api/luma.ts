@@ -16,18 +16,94 @@ interface LumaGeneration {
   video?: string | { url?: string };
 }
 
+const LUMA_PROXY = "/api/luma";
 const LUMA_API_BASE = "https://api.lumalabs.ai/dream-machine/v1";
+
+function mapAspectRatioToLuma(aspectRatio: string): string {
+  switch (aspectRatio) {
+    case "16:9":
+    case "1280:720":
+      return "16:9";
+    case "9:16":
+    case "720:1280":
+      return "9:16";
+    case "1:1":
+    case "960:960":
+      return "1:1";
+    default:
+      return aspectRatio.includes(":") ? aspectRatio : "16:9";
+  }
+}
+
+async function lumaFetchWithProxy(
+  targetPath: string,
+  apiKey: string,
+  init: RequestInit,
+  useProxy: boolean = true
+): Promise<Response> {
+  if (useProxy) {
+    try {
+      const proxyUrl = `${LUMA_PROXY}?targetPath=${encodeURIComponent(targetPath)}`;
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      };
+
+      if (init.method === "POST") {
+        const body = init.body as string;
+        let parsed: any = {};
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          parsed = {};
+        }
+        const res = await apiFetch(proxyUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ targetPath, ...parsed }),
+        });
+        return res;
+      } else {
+        const res = await apiFetch(proxyUrl, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/json",
+          },
+        });
+        return res;
+      }
+    } catch (e) {
+      console.warn("Luma proxy failed, falling back to direct:", e);
+    }
+  }
+
+  // Direct
+  const url = `${LUMA_API_BASE}${targetPath.startsWith("/") ? targetPath : "/" + targetPath}`;
+  // If targetPath already full URL? handle
+  const finalUrl = targetPath.startsWith("https://") ? targetPath : url;
+  return apiFetch(finalUrl, init);
+}
 
 export async function submitLumaJob(
   params: GenerationParams,
   apiKey: string
 ): Promise<{ generationId: string }> {
-  const url = `${LUMA_API_BASE}/generations`;
+  const targetPath = "/dream-machine/v1/generations";
+
+  // Map model endpoint: ray-2, ray-flash-2, ray-flash-2-720p, etc
+  let modelId = params.model.endpoint;
+  // Normalize some legacy names
+  if (modelId === "ray-2") modelId = "ray-2";
+  if (modelId === "ray-flash-2") modelId = "ray-flash-2";
+  // ray-flash-2-720p is a valid model id for API? Actually API uses ray-2 and ray-flash-2 with resolution param
+  // But we support passing model as-is, and set resolution separately
 
   const body: Record<string, unknown> = {
     prompt: params.prompt,
-    model: params.model.endpoint,
-    aspect_ratio: params.aspectRatio || "16:9",
+    model: modelId.includes("ray") ? modelId : "ray-2",
+    aspect_ratio: mapAspectRatioToLuma(params.aspectRatio || "16:9"),
     keyframes: {
       frame0: {
         type: "image",
@@ -36,15 +112,59 @@ export async function submitLumaJob(
     },
   };
 
-  const res = await apiFetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  // Handle resolution and duration for newer models
+  // Luma API supports duration as "5s" or 5, and resolution as "540p", "720p", "1080p", "4k"
+  if (params.durationSeconds) {
+    // Luma expects duration like "5s" or 5, we send as number for 5 or 9
+    (body as any).duration = `${params.durationSeconds}s`;
+  }
+
+  // Resolution mapping - default 720p, but allow 1080p for ray-2
+  if (modelId.includes("720p")) {
+    (body as any).resolution = "720p";
+    // Strip resolution from model id if needed, Luma API expects model = ray-flash-2 etc with resolution param
+    // But we keep model as ray-flash-2-720p if that's what user selected? Actually API model should be ray-2 or ray-flash-2
+    // So we normalize
+    if (modelId === "ray-flash-2-720p") {
+      (body as any).model = "ray-flash-2";
+      (body as any).resolution = "720p";
+    }
+  } else if (modelId.includes("540p")) {
+    (body as any).resolution = "540p";
+    if (modelId === "ray-flash-2-540p") {
+      (body as any).model = "ray-flash-2";
+    }
+  } else {
+    (body as any).resolution = "720p";
+  }
+
+  // If model is ray-2, we can request 1080p for better quality
+  if (modelId === "ray-2") {
+    (body as any).resolution = "1080p";
+  }
+
+  let res: Response;
+  try {
+    res = await lumaFetchWithProxy(targetPath, apiKey, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }, true);
+  } catch {
+    res = await lumaFetchWithProxy(targetPath, apiKey, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }, false);
+  }
 
   let json: LumaGeneration;
   try {
@@ -52,13 +172,13 @@ export async function submitLumaJob(
   } catch {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `Luma returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 200)}`
+      `Luma returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 400)}`
     );
   }
 
   if (!json.id) {
     throw new Error(
-      `Luma did not return a generation ID: ${JSON.stringify(json).slice(0, 300)}`
+      `Luma did not return a generation ID: ${JSON.stringify(json).slice(0, 500)}`
     );
   }
 
@@ -70,19 +190,30 @@ export async function pollLumaJob(
   apiKey: string,
   onProgress?: (msg: string) => void
 ): Promise<string> {
-  const pollUrl = `${LUMA_API_BASE}/generations/${generationId}`;
+  const targetPath = `/dream-machine/v1/generations/${generationId}`;
   let interval = POLL_INTERVAL_BASE_MS;
 
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
     await sleep(interval);
 
-    const res = await apiFetch(pollUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
-    });
+    let res: Response;
+    try {
+      res = await lumaFetchWithProxy(targetPath, apiKey, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+      }, true);
+    } catch {
+      res = await lumaFetchWithProxy(targetPath, apiKey, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+      }, false);
+    }
 
     let gen: LumaGeneration;
     try {
@@ -90,7 +221,7 @@ export async function pollLumaJob(
     } catch {
       const text = await res.text().catch(() => "");
       throw new Error(
-        `Luma returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 200)}`
+        `Luma returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 400)}`
       );
     }
 

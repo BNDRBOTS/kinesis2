@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import type { PipelineState, VideoSegment } from "../types";
 import { Download, Film, Layers, CheckCircle2, Eye, ExternalLink, ShieldCheck, Volume2, Sparkles, Wand2 } from "lucide-react";
+import { getProxiedMediaUrl } from "../api/helpers";
 
 interface Props {
   state: PipelineState;
@@ -18,8 +19,11 @@ export default function VideoPlayer({ state }: Props) {
 
   const handleDownload = useCallback(
     async (url: string, filename: string) => {
+      // Use proxied URL to avoid CORS issues during fetch
+      const fetchUrl = getProxiedMediaUrl(url);
       try {
-        const res = await fetch(url);
+        const res = await fetch(fetchUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -30,6 +34,7 @@ export default function VideoPlayer({ state }: Props) {
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
       } catch {
+        // Fallback to opening original URL
         window.open(url, "_blank");
       }
     },
@@ -108,7 +113,7 @@ export default function VideoPlayer({ state }: Props) {
       {activeTab === "final" && videoUrl && (
         <div className="space-y-4">
           <div className="relative rounded-3xl overflow-hidden border border-neutral-700/80 bg-black shadow-2xl group flex items-center justify-center min-h-[340px]">
-            <video
+            <video crossOrigin="anonymous"
               src={videoUrl}
               controls
               autoPlay
@@ -197,7 +202,7 @@ export default function VideoPlayer({ state }: Props) {
       {activeTab === "upscaled" && upscaledUrl && (
         <div className="space-y-6 animate-fadeIn">
           <div className="relative rounded-3xl overflow-hidden border border-emerald-500/50 bg-black shadow-2xl group flex items-center justify-center min-h-[340px]">
-            <video
+            <video crossOrigin="anonymous"
               src={upscaledUrl}
               controls
               autoPlay
@@ -277,7 +282,7 @@ export default function VideoPlayer({ state }: Props) {
                   </div>
 
                   <div className="relative rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800 aspect-video flex items-center justify-center shadow-inner">
-                    <video
+                    <video crossOrigin="anonymous"
                       src={seg.videoUrl!}
                       controls
                       playsInline

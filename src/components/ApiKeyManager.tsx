@@ -28,7 +28,7 @@ const FIELDS: ProviderField[] = [
     label: "fal.ai API Key",
     placeholder: "fal_...",
     docsUrl: "https://fal.ai/dashboard/keys",
-    badge: "Cloud GPU",
+    badge: "Cloud GPU - LTX Cheap",
   },
   {
     key: "replicate",
@@ -40,16 +40,16 @@ const FIELDS: ProviderField[] = [
   {
     key: "runway",
     label: "Runway API Key",
-    placeholder: "rw_...",
+    placeholder: "key_...",
     docsUrl: "https://dev.runwayml.com/",
-    badge: "Gen-3 Alpha",
+    badge: "Gen-4 Turbo / 4.5",
   },
   {
     key: "luma",
     label: "Luma AI API Key",
     placeholder: "luma-...",
     docsUrl: "https://lumalabs.ai/dream-machine/api",
-    badge: "Dream Machine",
+    badge: "Ray-2 / Flash-2",
   },
 ];
 
