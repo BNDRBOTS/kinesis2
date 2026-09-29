@@ -108,8 +108,11 @@ export async function runPipeline(
   callbacks: PipelineCallbacks,
   signal?: AbortSignal
 ): Promise<void> {
-  const maxDur = baseParams.model.maxDurationSeconds;
-  const durations = computeSegmentDurations(targetDuration, maxDur);
+  const perSegmentDuration = Math.min(
+    baseParams.durationSeconds,
+    baseParams.model.maxDurationSeconds
+  );
+  const durations = computeSegmentDurations(targetDuration, perSegmentDuration);
   const segments: VideoSegment[] = [];
   const completedVideoUrls: string[] = [];
 

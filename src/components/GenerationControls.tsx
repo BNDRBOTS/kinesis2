@@ -51,9 +51,12 @@ export default function GenerationControls({
   );
   
   const segmentCount = useMemo(() => {
-    const max = selectedModel.maxDurationSeconds;
-    return Math.ceil(settings.targetTotalDuration / max);
-  }, [selectedModel, settings.targetTotalDuration]);
+    const perClip = Math.min(
+      settings.durationPerClip,
+      selectedModel.maxDurationSeconds
+    );
+    return Math.ceil(settings.targetTotalDuration / perClip);
+  }, [selectedModel, settings.durationPerClip, settings.targetTotalDuration]);
   
   const handleApplyPreset = (preset: Preset) => {
     if (onSelectPreset) {

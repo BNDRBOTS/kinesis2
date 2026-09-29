@@ -34,13 +34,24 @@ interface FalResultResponse {
   };
 }
 
-export async function submitFalJob(
-  params: GenerationParams,
-  apiKey: string
-): Promise<{ requestId: string; statusUrl: string; responseUrl: string }> {
-  const endpointId = params.model.endpoint;
-  const submitUrl = `https://queue.fal.run/${endpointId}`;
+function framesForDuration(seconds: number, fps: number): number {
+  return Math.round(seconds * fps) + 1;
+}
 
+function ltxVideoSize(aspectRatio: string): string {
+  switch (aspectRatio) {
+    case "9:16":
+      return "portrait_16_9";
+    case "1:1":
+      return "square";
+    case "16:9":
+    default:
+      return "landscape_16_9";
+  }
+}
+
+function buildLegacyFalInput(params: GenerationParams): Record<string, unknown> {
+  const endpointId = params.model.endpoint;
   const input: Record<string, unknown> = {
     prompt: params.prompt,
     duration: String(params.durationSeconds),
@@ -63,6 +74,71 @@ export async function submitFalJob(
   if (params.aspectRatio) {
     input.aspect_ratio = params.aspectRatio;
   }
+
+  return input;
+}
+
+function buildFalInput(params: GenerationParams): Record<string, unknown> {
+  const common = {
+    prompt: params.prompt,
+    image_url: params.imageUrl,
+  };
+
+  switch (params.model.id) {
+    case "fal-wan-2.2-a14b-i2v":
+      return {
+        ...common,
+        num_frames: Math.min(
+          161,
+          Math.max(17, framesForDuration(params.durationSeconds, 16))
+        ),
+        frames_per_second: 16,
+        aspect_ratio: params.aspectRatio,
+        enable_prompt_expansion: false,
+        ...(params.seed !== null ? { seed: params.seed } : {}),
+        ...(params.negativePrompt
+          ? { negative_prompt: params.negativePrompt }
+          : {}),
+      };
+
+    case "fal-hunyuan-1.5-i2v":
+      return {
+        ...common,
+        num_frames: framesForDuration(params.durationSeconds, 24),
+        aspect_ratio: params.aspectRatio,
+        enable_prompt_expansion: false,
+        ...(params.seed !== null ? { seed: params.seed } : {}),
+        ...(params.negativePrompt
+          ? { negative_prompt: params.negativePrompt }
+          : {}),
+      };
+
+    case "fal-ltx-2.3-22b-i2v":
+      return {
+        ...common,
+        num_frames: framesForDuration(params.durationSeconds, 24),
+        fps: 24,
+        video_size: ltxVideoSize(params.aspectRatio),
+        generate_audio: false,
+        enable_prompt_expansion: false,
+        ...(params.seed !== null ? { seed: params.seed } : {}),
+        ...(params.negativePrompt
+          ? { negative_prompt: params.negativePrompt }
+          : {}),
+      };
+
+    default:
+      return buildLegacyFalInput(params);
+  }
+}
+
+export async function submitFalJob(
+  params: GenerationParams,
+  apiKey: string
+): Promise<{ requestId: string; statusUrl: string; responseUrl: string }> {
+  const endpointId = params.model.endpoint;
+  const submitUrl = `https://queue.fal.run/${endpointId}`;
+  const input = buildFalInput(params);
 
   const res = await apiFetch(submitUrl, {
     method: "POST",
