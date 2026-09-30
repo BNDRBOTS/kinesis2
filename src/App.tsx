@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { ApiKeys, Preset, FeatureSwitches, CreationHistoryItem } from "./types";
 import {
   LS_KEY_API_KEYS,
@@ -15,6 +15,7 @@ import {
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { usePipeline } from "./hooks/usePipeline";
 
+import ImageStudio from "./components/ImageStudio";
 import ApiKeyManager from "./components/ApiKeyManager";
 import GenerationControls, { GenerationSettings } from "./components/GenerationControls";
 import ImageUploader from "./components/ImageUploader";
@@ -27,6 +28,7 @@ import { Video, Play, Square, Layers, RefreshCw, Cpu, HelpCircle, ShieldCheck, S
 
 const INITIAL_API_KEYS: ApiKeys = {
   comfyui: "",
+  comfyCloud: "",
   fal: "",
   replicate: "",
   runway: "",
@@ -34,7 +36,7 @@ const INITIAL_API_KEYS: ApiKeys = {
 };
 
 const INITIAL_SWITCHES: FeatureSwitches = {
-  enableGumroadGate: true,
+  enableGumroadGate: false,
   gumroadProductId: "kinesis_pro_studio",
   autoStitch: true,
   keepIntermediateSlices: true,
@@ -49,11 +51,13 @@ function MainStudioFeed() {
   const [switches, setSwitches] = useLocalStorage<FeatureSwitches>(LS_KEY_FEATURE_SWITCHES, INITIAL_SWITCHES);
   const [history, setHistory] = useLocalStorage<CreationHistoryItem[]>(LS_KEY_CREATION_HISTORY, []);
   
+  const [storageWarning, setStorageWarning] = useState(false);
+  useEffect(() => { const warn = () => setStorageWarning(true); window.addEventListener('kinesis-storage-error', warn); return () => window.removeEventListener('kinesis-storage-error', warn); }, []);
   const [sourceImageUrl, setSourceImageUrl] = useState<string>("");
-  const [activePortalTab, setActivePortalTab] = useState<"feed" | "switches" | "vault" | "docs">("feed");
+  const [activePortalTab, setActivePortalTab] = useState<"feed" | "switches" | "vault" | "docs" | "images">("feed");
 
   const [settings, setSettings] = useState<GenerationSettings>({
-    selectedModelId: MODEL_REGISTRY[0].id,
+    selectedModelId: "fal-ltx-2.5-pro-i2v",
     prompt: DEFAULT_PROMPT,
     negativePrompt: DEFAULT_NEGATIVE_PROMPT,
     durationPerClip: DEFAULT_DURATION_SECONDS,
@@ -63,7 +67,12 @@ function MainStudioFeed() {
     targetTotalDuration: DEFAULT_TARGET_DURATION,
   });
 
-  const { pipelineState, activeLogs, startPipeline, cancelPipeline } = usePipeline(apiKeys);
+  const [serverKeys, setServerKeys] = useState<Partial<ApiKeys>>({});
+  useEffect(() => { fetch('/api/config').then(r => r.json()).then(config => {
+    setServerKeys(Object.fromEntries(Object.entries(config).filter(([,v])=>v === true).map(([k])=>[k,'server-managed'])));
+  }).catch(() => {}); }, []);
+  const effectiveKeys = useMemo(() => Object.fromEntries(Object.entries({ ...INITIAL_API_KEYS, ...apiKeys }).map(([k,v]) => [k, v || serverKeys[k as keyof ApiKeys] || ''])) as unknown as ApiKeys, [apiKeys, serverKeys]);
+  const { pipelineState, activeLogs, startPipeline, cancelPipeline } = usePipeline(effectiveKeys);
 
   const canGenerate = useMemo(() => {
     const hasImage = !!sourceImageUrl;
@@ -72,10 +81,10 @@ function MainStudioFeed() {
     
     if (!modelDef) return false;
     
-    const hasRequiredKey = !!apiKeys[modelDef.provider];
+    const hasRequiredKey = !!effectiveKeys[modelDef.provider];
     
     return hasImage && hasModel && hasRequiredKey && pipelineState.status !== "generating" && pipelineState.status !== "stitching";
-  }, [sourceImageUrl, settings.selectedModelId, apiKeys, pipelineState.status]);
+  }, [sourceImageUrl, settings.selectedModelId, effectiveKeys, pipelineState.status]);
 
   const handleStartExecution = () => {
     const modelDef = MODEL_REGISTRY.find((m) => m.id === settings.selectedModelId);
@@ -113,6 +122,8 @@ function MainStudioFeed() {
   const handleLoadSession = useCallback((item: CreationHistoryItem) => {
     setSettings((prev) => ({
       ...prev,
+      selectedModelId: item.segments[0]?.params.model.id || prev.selectedModelId,
+      durationPerClip: item.segments[0]?.params.durationSeconds || prev.durationPerClip,
       prompt: item.prompt,
       negativePrompt: item.negativePrompt,
       targetTotalDuration: item.targetDurationSeconds,
@@ -148,6 +159,7 @@ function MainStudioFeed() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
+      {storageWarning && <div role="alert" className="p-4 text-amber-300">Browser storage is full or unavailable. This session is visible but may not survive reload. Download your outputs and free space in the Vault.</div>}
       {/* Top Elite Navigation Studio Header */}
       <header className="sticky top-0 z-50 border-b border-neutral-800/80 bg-neutral-950/90 backdrop-blur-xl px-4 sm:px-8 py-3.5 transition-all shadow-lg">
         <div className="mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 max-w-7xl">
@@ -172,6 +184,7 @@ function MainStudioFeed() {
 
           {/* Portal Navigation Controller */}
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-1.5 w-full sm:w-auto bg-neutral-900 p-1.5 rounded-2xl border border-neutral-800">
+            <button onClick={() => setActivePortalTab("images")} className={`px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider ${activePortalTab === "images" ? "bg-sky-500 text-white" : "text-neutral-400 hover:text-white"}`}>Image Studio</button>
             <button
               onClick={() => setActivePortalTab("feed")}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
@@ -223,7 +236,7 @@ function MainStudioFeed() {
 
       {/* Main Orchestrator Feeds & Views */}
       <main className="flex-1 mx-auto max-w-7xl w-full px-4 sm:px-8 py-8 items-start">
-        {activePortalTab === "docs" ? (
+        {activePortalTab === "images" ? <ImageStudio onUseVideo={url => { setSourceImageUrl(url); setActivePortalTab("feed"); }} /> : activePortalTab === "docs" ? (
           <div className="space-y-8 rounded-3xl border border-neutral-800 bg-neutral-900/90 p-8 sm:p-12 shadow-2xl animate-fadeIn max-w-4xl mx-auto font-sans">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-lg shadow-sky-500/25">
@@ -258,10 +271,10 @@ function MainStudioFeed() {
                 </div>
 
                 <div className="p-5 rounded-3xl bg-neutral-950 border border-neutral-800 space-y-2.5 shadow-md">
-                  <span className="text-sky-400 font-black text-xs uppercase tracking-wider block">Phase 3: WebM Stream</span>
+                  <span className="text-sky-400 font-black text-xs uppercase tracking-wider block">Phase 3: MP4 Output</span>
                   <h4 className="font-black text-white text-base">Canvas Stitcher</h4>
                   <p className="text-neutral-400 text-xs leading-relaxed font-normal">
-                    Finally, KINESIS plays all completed MP4 segments into a customized HTML5 `canvas.captureStream(30)` MediaRecorder engine, producing a highly optimized master WebM video output file.
+                    Finally, the Node media worker normalizes and concatenates all segments into an MP4, preserving native audio.
                   </p>
                 </div>
               </div>
@@ -298,7 +311,8 @@ function MainStudioFeed() {
                 Connect your managed provider tokens in the API Keys studio below. Once authenticated, KINESIS gives you completely unfiltered, full-access video orchestration!
               </p>
               <div className="pt-2">
-                <ApiKeyManager apiKeys={apiKeys} onChange={setApiKeys} />
+                <ApiKeyManager apiKeys={apiKeys} serverKeys={serverKeys} onChange={setApiKeys} />
+                {Object.keys(serverKeys).length > 0 && <p className="text-xs text-emerald-400">Server-managed credentials: {Object.keys(serverKeys).join(", ")}</p>}
               </div>
             </div>
           </div>
@@ -318,7 +332,8 @@ function MainStudioFeed() {
             <div className="space-y-6 lg:col-span-5 lg:col-start-1">
               
               {/* Top Configuration & Tokens Studio */}
-              <ApiKeyManager apiKeys={apiKeys} onChange={setApiKeys} />
+              <ApiKeyManager apiKeys={apiKeys} serverKeys={serverKeys} onChange={setApiKeys} />
+                {Object.keys(serverKeys).length > 0 && <p className="text-xs text-emerald-400">Server-managed credentials: {Object.keys(serverKeys).join(", ")}</p>}
               
               {/* Step 1: Source Image Keyframe */}
               <div className="rounded-3xl border border-neutral-800/80 bg-neutral-900/90 p-6 sm:p-7 shadow-2xl backdrop-blur transition-all space-y-3">
@@ -346,7 +361,7 @@ function MainStudioFeed() {
                 <GenerationControls
                   settings={settings}
                   onChange={setSettings}
-                  apiKeys={apiKeys}
+                  apiKeys={effectiveKeys}
                   onSelectPreset={handleSelectPreset}
                 />
               </div>
@@ -441,7 +456,7 @@ function MainStudioFeed() {
                   <div className="space-y-1">
                     <p className="text-xs font-black text-white uppercase tracking-wider">Automated Concatenation Stitched Feed</p>
                     <p className="text-xs text-neutral-400 leading-relaxed font-medium">
-                      Intermediate MP4 video chunks are accurately buffered via HTML5 Canvas `captureStream(30)` to output a continuous WebM showcase overriding default API boundaries.
+                      Generated segments are chained from their final frames, then optionally stitched into an MP4 with native audio retained.
                     </p>
                   </div>
                 </div>

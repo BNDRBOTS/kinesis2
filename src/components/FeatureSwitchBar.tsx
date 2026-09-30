@@ -45,7 +45,7 @@ export default function FeatureSwitchBar({ switches, onChange }: Props) {
             <Video className={`h-4 w-4 ${switches.autoStitch ? "text-sky-400" : "text-neutral-500"}`} />
             <div>
               <p className="text-xs font-bold">Auto-Stitch Sequence</p>
-              <p className="text-[10px] opacity-75">Concatenate slices to WebM</p>
+              <p className="text-[10px] opacity-75">Concatenate slices to MP4 with audio</p>
             </div>
           </div>
           <div className={`h-5 w-9 rounded-full transition-colors p-0.5 ${switches.autoStitch ? "bg-sky-500" : "bg-neutral-800"}`}>
@@ -100,7 +100,7 @@ export default function FeatureSwitchBar({ switches, onChange }: Props) {
           <div className="flex items-center gap-3">
             <Sparkles className={`h-4 w-4 ${switches.aiUpscaleFinal ? "text-emerald-400" : "text-neutral-500"}`} />
             <div>
-              <p className="text-xs font-bold">4K / 60fps AI Video Upscaling</p>
+              <p className="text-xs font-bold">2× AI Video Upscaling</p>
               <p className="text-[10px] opacity-75">Enhance final output resolution</p>
             </div>
           </div>

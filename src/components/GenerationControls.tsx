@@ -1,4 +1,6 @@
-import { useMemo, useCallback } from "react";
+import { validateWorkflow } from '../api/comfyui';
+import { planDurations } from '../duration';
+import { useMemo, useCallback, useState } from "react";
 import type { ModelDescriptor, ApiKeys, Preset } from "../types";
 import { MODEL_REGISTRY, MOCK_CREATOR_PRESETS } from "../constants";
 import { Sparkles, Sliders, Cpu, AlignLeft, ShieldOff, Clock, Film, Hash, Gauge, Wand2 } from "lucide-react";
@@ -27,14 +29,15 @@ export default function GenerationControls({
   apiKeys,
   onSelectPreset,
 }: Props) {
+  const [workflowMessage, setWorkflowMessage] = useState("");
   const availableModels: ModelDescriptor[] = useMemo(() => {
     const hasAnyKey = Object.values(apiKeys).some(Boolean);
     if (!hasAnyKey) return MODEL_REGISTRY;
     return MODEL_REGISTRY.filter((m) => {
       const key = apiKeys[m.provider];
-      return Boolean(key);
+      return Boolean(key) || m.id === settings.selectedModelId;
     });
-  }, [apiKeys]);
+  }, [apiKeys, settings.selectedModelId]);
   
   const selectedModel = useMemo(
     () =>
@@ -50,11 +53,9 @@ export default function GenerationControls({
     [settings, onChange]
   );
   
-  const segmentCount = useMemo(() => {
-    const max = selectedModel.maxDurationSeconds;
-    return Math.ceil(settings.targetTotalDuration / max);
-  }, [selectedModel, settings.targetTotalDuration]);
-  
+  const durationPlan = useMemo(() => planDurations(settings.targetTotalDuration, settings.durationPerClip, selectedModel), [selectedModel, settings.targetTotalDuration, settings.durationPerClip]);
+  const segmentCount = durationPlan.length;
+
   const handleApplyPreset = (preset: Preset) => {
     if (onSelectPreset) {
       onSelectPreset(preset);
@@ -153,7 +154,7 @@ export default function GenerationControls({
           className="block w-full rounded-2xl border border-neutral-700 bg-neutral-950 px-4 py-3.5 text-sm font-black text-white shadow-inner focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all cursor-pointer"
         >
           {availableModels.map((m) => (
-            <option key={m.id} value={m.id} className="bg-neutral-950 text-white py-1 font-bold">
+            <option key={m.id} value={m.id} disabled={m.endpoint === "gen3a_turbo"} className="bg-neutral-950 text-white py-1 font-bold">
               {m.label} ({m.maxDurationSeconds}s max / clip)
             </option>
           ))}
@@ -194,6 +195,16 @@ export default function GenerationControls({
           className="block w-full resize-y rounded-2xl border border-neutral-700 bg-neutral-950 p-4 text-sm text-neutral-100 placeholder-neutral-600 shadow-inner focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all leading-relaxed font-medium"
         />
       </div>
+
+      {['comfyui', 'comfyCloud'].includes(selectedModel.provider) && <div className="space-y-2 text-xs text-neutral-400">
+        <p>Comfy requires an API-exported video workflow and model-specific input bindings. Cloud selection runs remotely, never on your GPU. See docs/comfy-cloud.md.</p>
+        <input type="file" accept="application/json" onChange={async e => {
+          const file = e.target.files?.[0]; if (!file) return;
+          try { const template = JSON.parse(await file.text()); validateWorkflow(template); localStorage.setItem(`kinesis_workflow_${selectedModel.endpoint}`, JSON.stringify(template)); setWorkflowMessage('Workflow imported for ' + selectedModel.label); }
+          catch (error) { setWorkflowMessage(error instanceof Error ? error.message : 'Workflow import failed'); }
+        }} />
+        <p>{workflowMessage}</p>
+      </div>}
 
       {/* Negative Prompt */}
       {selectedModel.supportsNegativePrompt && (
@@ -249,7 +260,7 @@ export default function GenerationControls({
             />
             <span className="text-xs font-bold text-neutral-500">s</span>
           </div>
-          <p className="text-[10px] text-neutral-500 font-semibold">Max {selectedModel.maxDurationSeconds}s</p>
+          <p className="text-[10px] text-neutral-500 font-semibold">{selectedModel.durations ? `Provider: ${selectedModel.durations.join(" / ")}s` : `Max ${selectedModel.maxDurationSeconds}s`}</p>
         </div>
 
         <div className="space-y-1.5 p-3.5 rounded-2xl bg-neutral-950 border border-neutral-800">
@@ -308,6 +319,7 @@ export default function GenerationControls({
           <div className="flex items-center gap-1">
             <input
               id="cfg"
+              disabled={!selectedModel.endpoint.includes("/v3/") && !selectedModel.endpoint.includes("/v2/")}
               type="number"
               min={0}
               max={1}
@@ -349,7 +361,7 @@ export default function GenerationControls({
             type="range"
             min={5}
             max={60}
-            step={5}
+            step={1}
             value={settings.targetTotalDuration}
             onChange={(e) => update({ targetTotalDuration: Number(e.target.value) || 15 })}
             className="w-full accent-sky-500 h-2.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer"
@@ -360,11 +372,11 @@ export default function GenerationControls({
           <div className="flex items-center gap-2 text-xs text-neutral-400 font-medium">
             <span className="inline-block h-2 w-2 rounded-full bg-sky-400" />
             <span>
-              Auto-chaining into <strong>{segmentCount} dynamic slice{segmentCount !== 1 ? "s" : ""}</strong> ({settings.durationPerClip}s each)
+              Auto-chaining into <strong>{segmentCount} dynamic slice{segmentCount !== 1 ? "s" : ""}</strong> ({durationPlan.join(" + ")}s = {durationPlan.reduce((a,b) => a+b, 0)}s planned)
             </span>
           </div>
           <span className="text-[11px] text-sky-300 font-bold tracking-wide">
-            Seamless Canvas WebM Stitched Feed
+            MP4 stitching preserves native audio
           </span>
         </div>
       </div>

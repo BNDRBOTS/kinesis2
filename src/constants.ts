@@ -1,6 +1,10 @@
 import type { ModelDescriptor, Preset } from "./types";
 
-export const MODEL_REGISTRY: ModelDescriptor[] = [
+const MODELS: ModelDescriptor[] = [
+  { id: 'comfy-cloud-workflow', label: 'Comfy Cloud — Imported Video Workflow', provider: 'comfyCloud', endpoint: 'workflow-comfy-cloud', maxDurationSeconds: 10, supportsSeed: true, supportsNegativePrompt: true, aspectRatios: ['16:9','9:16','1:1'], note: 'Runs exclusively on Comfy Cloud GPUs. Paid Cloud API subscription required. Import a Cloud-tested video workflow; dimensions, frame limits and audio depend on that graph. No local inference.' },
+  { id: 'fal-ltx-2.3-22b-i2v', label: 'LTX 2.3 22B I2V (fal.ai)', provider: 'fal', endpoint: 'fal-ai/ltx-2.3-22b/image-to-video', maxDurationSeconds: 20, supportsSeed: true, supportsNegativePrompt: true, aspectRatios: ['16:9','9:16'], nativeAudio: true, note: '24 FPS; 9–481 frames. Native audio, seed and negative prompt.' },
+  { id: 'fal-wan-2.2-a14b-i2v', label: 'Wan 2.2 A14B I2V (fal.ai)', provider: 'fal', endpoint: 'fal-ai/wan/v2.2-a14b/image-to-video', maxDurationSeconds: 10, supportsSeed: true, supportsNegativePrompt: true, aspectRatios: ['16:9','9:16','1:1'], note: '720p, 16 FPS, 17–161 frames; silent video.' },
+  { id: 'fal-hunyuan-1.5-i2v', label: 'HunyuanVideo 1.5 I2V (fal.ai)', provider: 'fal', endpoint: 'fal-ai/hunyuan-video-v1.5/image-to-video', maxDurationSeconds: 5, supportsSeed: true, supportsNegativePrompt: true, aspectRatios: ['16:9','9:16'], note: '480p, up to 121 frames; silent video.' },
   // === ComfyUI Local / Self-Hosted (Free, Cheap) ===
   {
     id: "comfyui-ltx-2.5",
@@ -277,6 +281,30 @@ export const MODEL_REGISTRY: ModelDescriptor[] = [
     note: "Ray-2 Flash 720p variant: fast iteration.",
   },
 ];
+
+// Contracts verified against official Fal model schemas (see docs/providers.md).
+export const MODEL_REGISTRY: ModelDescriptor[] = MODELS.map(model => {
+  if (model.provider === 'comfyui') return { ...model, aspectRatios: ['16:9','9:16'], note: 'Requires an imported, GPU-tested API workflow, installed weights/custom nodes, and input bindings. Audio depends on the supplied workflow.' };
+  if (model.endpoint.includes('ltx-2') && !model.endpoint.includes('22b')) return {
+    ...model,
+    ...(model.id === 'fal-ltx-2-pro-i2v' ? { endpoint: 'fal-ai/ltx-2.3/image-to-video', label: 'LTX 2.3 Pro I2V (fal.ai)' } : {}),
+    ...(model.provider === 'fal' ? {
+      supportsSeed: false, supportsNegativePrompt: false, nativeAudio: true,
+      aspectRatios: ['16:9', '9:16'],
+      durations: model.endpoint.endsWith('/fast') ? [6,8,10,12,14,16,18,20] : [6,8,10],
+      note: 'Native audio; 1080p / 25 FPS. Pro: 6, 8 or 10 seconds. No seed or negative-prompt control.',
+    } : {}),
+  };
+  if (model.provider === 'luma') return { ...model, durations: [5,9] };
+  if (model.provider === 'runway') return { ...model, durations: model.endpoint === 'gen4.5' ? [2,3,4,5,6,7,8,9,10] : [5,10], note: model.endpoint === 'gen3a_turbo' ? 'Retired model; select Gen-4 Turbo.' : 'Runway I2V; seed supported. No negative prompt or native audio control.' };
+  if (model.endpoint.includes('kling-video')) return { ...model, nativeAudio: !model.endpoint.includes('/v2/'), supportsNegativePrompt: !model.endpoint.includes('/o3/'), maxDurationSeconds: model.endpoint.includes('/v3/') ? 15 : model.maxDurationSeconds, durations: model.endpoint.includes('/o3/') || model.endpoint.includes('/v3/') ? [3,4,5,6,7,8,9,10,11,12,13,14,15] : [5,10] };
+  if (model.endpoint.includes('wan-2.1-i2v')) return { ...model, durations: [5] };
+  if (model.endpoint.includes('wan-2.7')) return { ...model, maxDurationSeconds: 15, durations: Array.from({length:14}, (_,i)=>i+2) };
+  if (model.endpoint === 'minimax/video-01') return { ...model, durations: [6] };
+  if (model.endpoint.includes('ltx-video') && model.provider === 'fal') return { ...model, supportsSeed: true, ...(model.endpoint === 'fal-ai/ltx-video/image-to-video' ? { durations: [6], aspectRatios: ['3:2'], note: 'Legacy research-only preview. Fixed provider duration and 768×512 input.' } : {}) };
+  if (model.provider === 'fal') return { ...model, durations: Array.from({length:model.maxDurationSeconds}, (_,i)=>i+1) };
+  return model;
+});
 
 export const DEFAULT_PROMPT = "";
 export const DEFAULT_NEGATIVE_PROMPT = "blur, distort, low quality, watermark, overexposed, bad anatomy, artificial feel";

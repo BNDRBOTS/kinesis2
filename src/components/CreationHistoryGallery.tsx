@@ -1,3 +1,4 @@
+import { getProxiedMediaUrl, mediaExtension } from '../api/helpers';
 import { useState } from "react";
 import type { CreationHistoryItem } from "../types";
 import { History, Film, Eye, Trash2, Calendar, Clock, Layers, Sparkles, Volume2, Archive } from "lucide-react";
@@ -36,38 +37,47 @@ export default function CreationHistoryGallery({ items, onLoadSession, onDeleteI
       zip.file("execution_manifest.json", JSON.stringify(manifest, null, 2));
 
       // Download and attach master video if hosted
-      if (item.stitchedUrl && (item.stitchedUrl.startsWith("http") || item.stitchedUrl.startsWith("blob:"))) {
+      if (item.stitchedUrl) {
         try {
-          const res = await fetch(item.stitchedUrl);
+          const res = await fetch(getProxiedMediaUrl(item.stitchedUrl));
+          if (!res.ok) throw new Error(`Download failed: ${res.status}`);
           const blob = await res.blob();
-          zip.file("master_output.mp4", blob);
+          zip.file(`master_output.${mediaExtension(blob.type, item.stitchedUrl)}`, blob);
         } catch {
-          // ignore CORS errors
+          throw new Error("An output download failed; archive was not silently truncated.");
         }
       }
 
       // Download and attach Foley Audio if available
-      if (item.audioUrl && item.audioUrl.startsWith("http")) {
+      if (item.audioUrl) {
         try {
-          const res = await fetch(item.audioUrl);
+          const res = await fetch(getProxiedMediaUrl(item.audioUrl));
+          if (!res.ok) throw new Error(`Download failed: ${res.status}`);
           const blob = await res.blob();
-          zip.file("cinematic_foley.mp3", blob);
+          zip.file(`cinematic_foley.${mediaExtension(blob.type, item.audioUrl)}`, blob);
         } catch {
-          // ignore CORS errors
+          throw new Error("An output download failed; archive was not silently truncated.");
         }
       }
 
+      if (item.upscaledUrl) {
+        const response = await fetch(getProxiedMediaUrl(item.upscaledUrl));
+        if (!response.ok) throw new Error('Upscaled output download failed');
+        const blob = await response.blob();
+        zip.file(`upscaled.${mediaExtension(blob.type, item.upscaledUrl)}`, blob);
+      }
       // Download intermediate slices
       const slicesFolder = zip.folder("raw_slices");
       if (slicesFolder) {
         for (const [idx, seg] of item.segments.entries()) {
           if (seg.videoUrl && seg.status === "succeeded") {
             try {
-              const res = await fetch(seg.videoUrl);
-              const blob = await res.blob();
-              slicesFolder.file(`slice_${idx + 1}.mp4`, blob);
+              const res = await fetch(getProxiedMediaUrl(seg.videoUrl));
+              if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+          const blob = await res.blob();
+              slicesFolder.file(`slice_${idx + 1}.${mediaExtension(blob.type, seg.videoUrl)}`, blob);
             } catch {
-              // ignore CORS errors
+              throw new Error("An output download failed; archive was not silently truncated.");
             }
           }
         }
@@ -183,7 +193,7 @@ export default function CreationHistoryGallery({ items, onLoadSession, onDeleteI
                 >
                   {item.stitchedUrl || successfulSegments[0]?.videoUrl ? (
                     <video
-                      src={item.stitchedUrl || successfulSegments[0]?.videoUrl || ""}
+                      src={getProxiedMediaUrl(item.stitchedUrl || successfulSegments[0]?.videoUrl || "")}
                       controls={isSelected}
                       playsInline
                       className="w-full h-full object-contain"
@@ -218,7 +228,7 @@ export default function CreationHistoryGallery({ items, onLoadSession, onDeleteI
                     {item.upscaledUrl && (
                       <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                         <Sparkles className="h-3 w-3 text-emerald-400" />
-                        <span>4K Upscaled</span>
+                        <span>Upscaled</span>
                       </span>
                     )}
                   </div>

@@ -5,3 +5,8 @@ dist
 .DS_Store
 *.log
 coverage
+
+.media/
+.env
+.env.*
+!.env.example

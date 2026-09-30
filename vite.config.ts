@@ -19,6 +19,8 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    allowedHosts: [".e2b.app"],
+    proxy: { "/api": "http://127.0.0.1:3000", "/outputs": "http://127.0.0.1:3000", "/image-outputs": "http://127.0.0.1:3000", "/shared": "http://127.0.0.1:3000" },
     cors: true,
   },
   preview: {

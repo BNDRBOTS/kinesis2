@@ -1,3 +1,5 @@
+import { runComfyCloud } from './comfyCloud';
+import { planDurations } from '../duration';
 import type {
   GenerationParams,
   VideoSegment,
@@ -10,51 +12,53 @@ import { submitFalJob, pollFalJob, generateFalFoleyAudio, upscaleFalVideo } from
 import { submitReplicateJob, pollReplicateJob } from "./replicate";
 import { submitRunwayJob, pollRunwayJob } from "./runway";
 import { submitLumaJob, pollLumaJob } from "./luma";
-import { extractLastFrame, stitchVideos } from "./helpers";
-import { ensureImageUrl } from "./imageUpload";
+import { extractLastFrame, stitchVideos, cacheVideo } from "./helpers";
+import { ensureImageUrl, uploadToFal, prepareModelImage } from "./imageUpload";
 import { v4 as uuidv4 } from "uuid";
 
 export async function generateSingleSegment(
   params: GenerationParams,
   apiKeys: ApiKeys,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  signal?: AbortSignal
 ): Promise<string> {
   const provider: Provider = params.model.provider;
 
   switch (provider) {
+    case "comfyCloud": return runComfyCloud(params, apiKeys.comfyCloud || "", onProgress, signal);
     case "comfyui": {
       const key = apiKeys.comfyui;
       if (!key) throw new Error("ComfyUI Server URL is not configured. Please enter your local or hosted ComfyUI server URL in the API Keys panel.");
-      const { promptId } = await submitComfyUIJob(params, key);
-      return await pollComfyUIJob(promptId, key, onProgress);
+      const { promptId } = await submitComfyUIJob(params, key, signal);
+      return await pollComfyUIJob(promptId, key, onProgress, signal);
     }
 
     case "fal": {
       const key = apiKeys.fal;
       if (!key) throw new Error("fal.ai API key is not configured. Please configure your key in the API Keys panel.");
-      const { statusUrl, responseUrl } = await submitFalJob(params, key);
-      return await pollFalJob(statusUrl, responseUrl, key, onProgress);
+      const { statusUrl, responseUrl } = await submitFalJob(params, key, signal);
+      return await pollFalJob(statusUrl, responseUrl, key, onProgress, signal);
     }
 
     case "replicate": {
       const key = apiKeys.replicate;
       if (!key) throw new Error("Replicate API token is not configured. Please configure your token in the API Keys panel.");
-      const { predictionId } = await submitReplicateJob(params, key);
-      return await pollReplicateJob(predictionId, key, onProgress);
+      const { predictionId } = await submitReplicateJob(params, key, signal);
+      return await pollReplicateJob(predictionId, key, onProgress, signal);
     }
 
     case "runway": {
       const key = apiKeys.runway;
       if (!key) throw new Error("Runway API key is not configured. Please configure your key in the API Keys panel.");
-      const { taskId } = await submitRunwayJob(params, key);
-      return await pollRunwayJob(taskId, key, onProgress);
+      const { taskId } = await submitRunwayJob(params, key, signal);
+      return await pollRunwayJob(taskId, key, onProgress, signal);
     }
 
     case "luma": {
       const key = apiKeys.luma;
       if (!key) throw new Error("Luma AI API key is not configured. Please configure your key in the API Keys panel.");
-      const { generationId } = await submitLumaJob(params, key);
-      return await pollLumaJob(generationId, key, onProgress);
+      const { generationId } = await submitLumaJob(params, key, signal);
+      return await pollLumaJob(generationId, key, onProgress, signal);
     }
 
     default:
@@ -75,29 +79,11 @@ export interface PipelineCallbacks {
   onProgress: (segmentId: string, msg: string) => void;
 }
 
-export function computeSegmentCount(
-  targetDuration: number,
-  perSegmentMax: number
-): number {
-  if (targetDuration <= 0 || perSegmentMax <= 0) return 1;
-  return Math.ceil(targetDuration / perSegmentMax);
+export function computeSegmentCount(targetDuration: number, perSegmentMax: number): number {
+  return computeSegmentDurations(targetDuration, perSegmentMax).length;
 }
-
-export function computeSegmentDurations(
-  targetDuration: number,
-  perSegmentMax: number
-): number[] {
-  const count = computeSegmentCount(targetDuration, perSegmentMax);
-  const durations: number[] = [];
-  let remaining = targetDuration;
-
-  for (let i = 0; i < count; i++) {
-    const dur = Math.min(remaining, perSegmentMax);
-    durations.push(dur);
-    remaining -= dur;
-  }
-
-  return durations;
+export function computeSegmentDurations(targetDuration: number, perSegmentMax: number): number[] {
+  return planDurations(targetDuration, perSegmentMax, { maxDurationSeconds: perSegmentMax });
 }
 
 export async function runPipeline(
@@ -108,8 +94,10 @@ export async function runPipeline(
   callbacks: PipelineCallbacks,
   signal?: AbortSignal
 ): Promise<void> {
-  const maxDur = baseParams.model.maxDurationSeconds;
-  const durations = computeSegmentDurations(targetDuration, maxDur);
+  signal?.throwIfAborted();
+  if (baseParams.model.supportsSeed && baseParams.seed !== null && (!Number.isInteger(baseParams.seed) || baseParams.seed < 0 || baseParams.seed > (baseParams.model.provider === 'runway' ? 4294967295 : 2147483647))) throw new Error('Invalid seed for selected model');
+  if (baseParams.model.supportsSeed && baseParams.seed === null) baseParams = { ...baseParams, seed: Math.floor(Math.random() * 2147483647) };
+  const durations = planDurations(targetDuration, baseParams.durationSeconds, baseParams.model);
   const segments: VideoSegment[] = [];
   const completedVideoUrls: string[] = [];
 
@@ -138,7 +126,7 @@ export async function runPipeline(
     if (signal?.aborted) {
       segments[i].status = "cancelled";
       callbacks.onSegmentUpdated(segments[i]);
-      break;
+      signal.throwIfAborted();
     }
 
     const seg = segments[i];
@@ -163,9 +151,9 @@ export async function runPipeline(
       callbacks.onSegmentUpdated(seg);
 
       const hostedImageUrl = await ensureImageUrl(
-        seg.params.imageUrl,
+        await prepareModelImage(seg.params, signal),
         seg.params.model.provider,
-        apiKeys
+        apiKeys, signal
       );
 
       const paramsWithHostedImage: GenerationParams = {
@@ -173,34 +161,34 @@ export async function runPipeline(
         imageUrl: hostedImageUrl,
       };
 
+      seg.params = paramsWithHostedImage;
       const videoUrl = await generateSingleSegment(
         paramsWithHostedImage,
         apiKeys,
-        (msg) => callbacks.onProgress(seg.id, msg)
+        (msg) => callbacks.onProgress(seg.id, msg), signal
       );
 
+      signal?.throwIfAborted();
       seg.videoUrl = videoUrl;
-      completedVideoUrls.push(videoUrl);
+      callbacks.onSegmentUpdated(seg);
+
 
       // We only extract the last frame if we have another segment to render
       if (i < segments.length - 1) {
-        try {
-          seg.lastFrameUrl = await extractLastFrame(videoUrl);
-        } catch (frameErr) {
-          console.warn(
-            `Last-frame extraction failed for segment #${i + 1}; falling back to original source image.`,
-            frameErr
-          );
-          seg.lastFrameUrl = baseParams.imageUrl;
-        }
+        seg.lastFrameUrl = await extractLastFrame(videoUrl, signal);
       }
 
+      if (switches.keepIntermediateSlices) {
+        try { seg.videoUrl = await cacheVideo(videoUrl, signal); }
+        catch (error) { signal?.throwIfAborted(); callbacks.onProgress(seg.id, `Local archive unavailable; provider URL retained: ${String(error)}`); }
+      }
+      completedVideoUrls.push(seg.videoUrl!);
       seg.status = "succeeded";
       callbacks.onSegmentUpdated(seg);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Unknown generation error";
-      seg.status = "failed";
+      seg.status = signal?.aborted ? "cancelled" : "failed";
       seg.error = message;
       callbacks.onSegmentUpdated(seg);
       callbacks.onError(`Segment #${i + 1} failed: ${message}`);
@@ -210,64 +198,80 @@ export async function runPipeline(
         segments[j].error = "Cancelled due to prior segment failure.";
         callbacks.onSegmentUpdated(segments[j]);
       }
-      break;
+      throw err;
     }
   }
 
-  if (signal?.aborted) return;
+  signal?.throwIfAborted();
 
   if (completedVideoUrls.length === 0) return;
 
   let finalOutputUrl = completedVideoUrls[0];
+  let finalDuration = durations[0];
 
   // Concatenation Stitching
   if (completedVideoUrls.length > 1 && switches.autoStitch) {
     callbacks.onStitchStart();
     try {
-      finalOutputUrl = await stitchVideos(completedVideoUrls);
+      finalOutputUrl = await stitchVideos(completedVideoUrls, signal);
+      finalDuration = durations.reduce((a,b)=>a+b,0);
       callbacks.onStitchComplete(finalOutputUrl);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Unknown stitching error";
+      signal?.throwIfAborted();
       console.warn(`Stitching encountered an issue: ${message}. Using first completed video as final preview.`);
+      callbacks.onProgress(segments[0].id, `Stitch failed: ${message}. Individual segments remain available.`);
       callbacks.onStitchComplete(completedVideoUrls[0]);
     }
   } else {
     callbacks.onStitchComplete(finalOutputUrl);
   }
 
+  let postInput = finalOutputUrl;
+  if ((switches.generateFoleyAudio || switches.aiUpscaleFinal) && apiKeys.fal && !postInput.startsWith('https://')) {
+    try { postInput = await uploadToFal(postInput, apiKeys.fal, signal); }
+    catch (err) { signal?.throwIfAborted(); callbacks.onProgress(segments[0].id, `Post-processing upload failed: ${String(err)}`); return; }
+  }
+  if ((switches.generateFoleyAudio || switches.aiUpscaleFinal) && !apiKeys.fal) callbacks.onProgress(segments[0].id, 'Optional processing skipped: Fal credentials not configured.');
+
   // Optional Foley Audio Sound Effects Generation
   if (switches.generateFoleyAudio && apiKeys.fal && !signal?.aborted) {
     callbacks.onAudioStart();
     try {
       const audioUrl = await generateFalFoleyAudio(
-        finalOutputUrl,
+        postInput,
         switches.foleyPrompt || baseParams.prompt,
         apiKeys.fal,
-        (msg) => callbacks.onProgress(segments[0].id, msg)
+        (msg) => callbacks.onProgress(segments[0].id, msg), signal, finalDuration
       );
+      signal?.throwIfAborted();
       callbacks.onAudioComplete(audioUrl);
+      postInput = audioUrl;
     } catch (audErr: unknown) {
       const message = audErr instanceof Error ? audErr.message : "Unknown audio failure";
+      signal?.throwIfAborted();
       console.warn("Foley Audio generation failed:", message);
       callbacks.onProgress(segments[0].id, `⚠️ Foley Audio skipped: ${message}`);
     }
   }
 
-  // Optional AI Video Upscaling to 4K / 60fps
+  // Optional 2× spatial upscaling; use Foley result when available
   if (switches.aiUpscaleFinal && apiKeys.fal && !signal?.aborted) {
     callbacks.onUpscaleStart();
     try {
       const upscaledUrl = await upscaleFalVideo(
-        finalOutputUrl,
+        postInput,
         apiKeys.fal,
-        (msg) => callbacks.onProgress(segments[0].id, msg)
+        (msg) => callbacks.onProgress(segments[0].id, msg), signal
       );
+      signal?.throwIfAborted();
       callbacks.onUpscaleComplete(upscaledUrl);
     } catch (upErr: unknown) {
       const message = upErr instanceof Error ? upErr.message : "Unknown upscaler failure";
+      signal?.throwIfAborted();
       console.warn("AI Video Upscaling failed:", message);
-      callbacks.onProgress(segments[0].id, `⚠️ 4K AI Upscale skipped: ${message}`);
+      callbacks.onProgress(segments[0].id, `⚠️ 2× AI Upscale skipped: ${message}`);
     }
   }
 }

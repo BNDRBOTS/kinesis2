@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import type { PipelineState, VideoSegment } from "../types";
 import { Download, Film, Layers, CheckCircle2, Eye, ExternalLink, ShieldCheck, Volume2, Sparkles, Wand2 } from "lucide-react";
-import { getProxiedMediaUrl } from "../api/helpers";
+import { getProxiedMediaUrl, mediaExtension } from "../api/helpers";
 
 interface Props {
   state: PipelineState;
@@ -9,12 +9,12 @@ interface Props {
 
 export default function VideoPlayer({ state }: Props) {
   const [activeTab, setActiveTab] = useState<"final" | "segments" | "audio" | "upscaled">("final");
-  const videoUrl = state.stitchedUrl;
+  const videoUrl = state.stitchedUrl || state.segments.find(s => s.videoUrl)?.videoUrl || null;
   const audioUrl = state.audioUrl;
   const upscaledUrl = state.upscaledUrl;
 
   const completedSegments = state.segments.filter(
-    (s) => s.status === "succeeded" && s.videoUrl
+    (s) => !!s.videoUrl
   );
 
   const handleDownload = useCallback(
@@ -28,7 +28,7 @@ export default function VideoPlayer({ state }: Props) {
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = blobUrl;
-        a.download = filename;
+        a.download = filename.replace(/\.[^.]+$/, "") + "." + mediaExtension(blob.type, url);
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -67,7 +67,7 @@ export default function VideoPlayer({ state }: Props) {
               }`}
             >
               <Film className="h-3.5 w-3.5" />
-              <span>Stitched WebM</span>
+              <span>Video output</span>
             </button>
           )}
 
@@ -103,18 +103,19 @@ export default function VideoPlayer({ state }: Props) {
               }`}
             >
               <Wand2 className="h-3.5 w-3.5 animate-pulse" />
-              <span>4K Output</span>
+              <span>Upscaled Output</span>
             </button>
           )}
         </div>
       </div>
 
+      {state.segments.filter(s => s.videoUrl).length > 1 && state.stitchedUrl === state.segments[0]?.videoUrl && <p className="text-xs text-amber-300">Showing the first segment. The full sequence is available as individual slices, not a stitched master.</p>}
       {/* 1. Master WebM Video Showcase */}
       {activeTab === "final" && videoUrl && (
         <div className="space-y-4">
           <div className="relative rounded-3xl overflow-hidden border border-neutral-700/80 bg-black shadow-2xl group flex items-center justify-center min-h-[340px]">
             <video crossOrigin="anonymous"
-              src={videoUrl}
+              src={getProxiedMediaUrl(videoUrl)}
               controls
               autoPlay
               loop
@@ -148,7 +149,7 @@ export default function VideoPlayer({ state }: Props) {
                 className="flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 px-6 py-3.5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-sky-500/25 hover:opacity-95 active:scale-[0.99] transition-all cursor-pointer"
               >
                 <Download className="h-4 w-4" />
-                <span>Download Master WebM</span>
+                <span>Download video</span>
               </button>
 
               <a
@@ -184,15 +185,15 @@ export default function VideoPlayer({ state }: Props) {
               className="px-6 py-3.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-600/20 cursor-pointer flex items-center justify-center gap-2"
             >
               <Download className="h-4 w-4" />
-              <span>Download MP3 Audio</span>
+              <span>Download Foley video</span>
             </button>
           </div>
 
           <div className="p-6 rounded-3xl bg-neutral-950 border border-neutral-800 space-y-3">
             <p className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Preview Audio Direct</p>
-            <audio src={audioUrl} controls className="w-full" />
+            <video src={getProxiedMediaUrl(audioUrl)} controls className="w-full" />
             <p className="text-xs text-neutral-500 leading-relaxed font-medium">
-              You can import this cinematic Foley sound file directly into your video editing timeline (e.g. Premiere Pro, DaVinci Resolve, or CapCut) underneath your master WebM feed.
+              You can import this Foley video with synchronized sound directly into your video editing timeline (e.g. Premiere Pro, DaVinci Resolve, or CapCut) underneath your master video.
             </p>
           </div>
         </div>
@@ -203,7 +204,7 @@ export default function VideoPlayer({ state }: Props) {
         <div className="space-y-6 animate-fadeIn">
           <div className="relative rounded-3xl overflow-hidden border border-emerald-500/50 bg-black shadow-2xl group flex items-center justify-center min-h-[340px]">
             <video crossOrigin="anonymous"
-              src={upscaledUrl}
+              src={getProxiedMediaUrl(upscaledUrl)}
               controls
               autoPlay
               loop
@@ -212,7 +213,7 @@ export default function VideoPlayer({ state }: Props) {
             />
             <div className="absolute top-4 left-4 bg-black/80 backdrop-blur px-3.5 py-1.5 rounded-full border border-emerald-500 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-400 pointer-events-none shadow-lg">
               <Sparkles className="h-4 w-4 animate-spin text-emerald-400" />
-              <span>4K / 60fps AI Video Upscaling Master</span>
+              <span>2× AI Video Upscaling</span>
             </div>
           </div>
 
@@ -235,7 +236,7 @@ export default function VideoPlayer({ state }: Props) {
                 className="flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 px-6 py-3.5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-emerald-600/25 active:scale-[0.99] transition-all cursor-pointer"
               >
                 <Download className="h-4 w-4" />
-                <span>Download 4K WebM/MP4</span>
+                <span>Download upscaled video</span>
               </button>
 
               <a
@@ -283,7 +284,7 @@ export default function VideoPlayer({ state }: Props) {
 
                   <div className="relative rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800 aspect-video flex items-center justify-center shadow-inner">
                     <video crossOrigin="anonymous"
-                      src={seg.videoUrl!}
+                      src={getProxiedMediaUrl(seg.videoUrl!)}
                       controls
                       playsInline
                       className="w-full h-full object-contain bg-black"

@@ -64,7 +64,7 @@ assert(constants.includes('comfyui-ltx-video'), 'ComfyUI LTX-Video local backend
 console.log("\n=== 3. Media Hosting / CORS Fix ===");
 fileContains('src/api/helpers.ts', 'getProxiedMediaUrl', 'helpers has getProxiedMediaUrl');
 fileContains('src/api/helpers.ts', '/api/media?url=', 'helpers uses media proxy');
-fileContains('src/api/helpers.ts', 'crossOrigin', 'helpers sets crossOrigin');
+fileContains('server/media.mjs', 'ffmpeg.path', 'server extracts and stitches video with FFmpeg');
 fileContains('src/components/VideoPlayer.tsx', 'getProxiedMediaUrl', 'VideoPlayer uses proxied media for download');
 fileContains('src/components/VideoPlayer.tsx', 'crossOrigin="anonymous"', 'VideoPlayer sets crossOrigin');
 
@@ -80,18 +80,18 @@ fileContains('src/api/fal.ts', 'topaz/upscale', 'fal upscaler uses Topaz fallbac
 console.log("\n=== 5. Replicate / Runway / Luma Updated ===");
 fileContains('src/api/replicate.ts', 'first_frame', 'replicate handles Wan 2.7 first_frame');
 fileContains('src/api/replicate.ts', 'wavespeedai', 'replicate handles wavespeedai wan');
-fileContains('src/api/runway.ts', 'gen4', 'runway handles gen4 models generically');
+fileContains('src/api/runway.ts', 'promptImage', 'runway uses documented image field');
 fileContains('src/api/runway.ts', '1280:720', 'runway maps aspect ratio to gen4 format');
-fileContains('src/api/luma.ts', 'LUMA_PROXY', 'luma client uses proxy');
+fileContains('src/api/luma.ts', 'providerRequest', 'luma client uses shared proxy');
 fileContains('src/api/luma.ts', 'ray-flash-2', 'luma handles ray-flash-2');
 
 // 6. Check ComfyUI LTX backend
 console.log("\n=== 6. ComfyUI/LTX Cheap/Free Backend ===");
-fileContains('src/api/comfyui.ts', 'workflow-ltx-2.5', 'comfyui supports LTX-2.5 workflow');
-fileContains('src/api/comfyui.ts', 'workflow-ltx-video', 'comfyui supports LTX-Video workflow');
-fileContains('src/api/comfyui.ts', 'LTXVImgToVideo', 'comfyui has LTXVImgToVideo node');
-fileContains('src/api/comfyui.ts', 'LTXVConditioning', 'comfyui has LTXVConditioning node');
-fileContains('src/api/comfyui.ts', 'getCheckpointName', 'comfyui has checkpoint mapping');
+fileContains('src/api/comfyui.ts', 'validateWorkflow', 'ComfyUI validates imported API workflows');
+fileContains('src/api/comfyui.ts', 'buildComfyWorkflow', 'ComfyUI binds model-specific graph inputs');
+fileContains('src/api/comfyui.ts', '/upload/image', 'ComfyUI uploads source images');
+fileContains('src/api/comfyui.ts', '/history/', 'ComfyUI polls history');
+fileContains('src/constants.ts', 'workflow-ltx-video', 'LTX local registry preserved');
 
 // 7. Mock end-to-end test for fal LTX provider
 console.log("\n=== 7. Mock End-to-End Test (fal LTX-2.5) ===");

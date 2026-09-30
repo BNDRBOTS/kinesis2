@@ -1,5 +1,6 @@
 export type Provider =
   | "comfyui"
+  | "comfyCloud"
   | "fal"
   | "replicate"
   | "runway"
@@ -11,6 +12,8 @@ export interface ModelDescriptor {
   provider: Provider;
   endpoint: string;
   maxDurationSeconds: number;
+  durations?: number[];
+  nativeAudio?: boolean;
   supportsSeed: boolean;
   supportsNegativePrompt: boolean;
   aspectRatios: string[];
@@ -68,6 +71,7 @@ export interface PipelineState {
 
 export interface ApiKeys {
   comfyui: string;
+  comfyCloud?: string;
   fal: string;
   replicate: string;
   runway: string;

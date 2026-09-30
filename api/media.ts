@@ -29,10 +29,10 @@ const ALLOWED_DOMAINS = [
 function isAllowedUrl(urlString: string): boolean {
   try {
     const u = new URL(urlString);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443')) return false;
     // Allow any https for now to support user uploads, but check if domain is in allowed list or is common CDN
     // For security, we still allow any https but with size limit
-    return true;
+    return ALLOWED_DOMAINS.some(domain => u.hostname === domain || u.hostname.endsWith('.' + domain));
   } catch {
     return false;
   }
@@ -78,6 +78,7 @@ export default async function handler(req: Request) {
 
     const res = await fetch(targetUrl, {
       method: req.method,
+      redirect: "error",
       headers,
     });
 

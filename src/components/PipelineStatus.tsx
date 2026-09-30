@@ -64,7 +64,7 @@ export default function PipelineStatus({ state, logs }: Props) {
             </div>
             <h4 className="text-lg font-black text-white tracking-wide mt-0.5">
               {state.status === "generating" && "Generating continuous keyframe slices..."}
-              {state.status === "stitching" && "Concatenating canvas WebM video segments..."}
+              {state.status === "stitching" && "Stitching MP4 segments and retaining native audio..."}
               {state.status === "complete" && "Production sequence successfully generated."}
               {state.status === "error" && "Pipeline encountered an unexpected execution barrier."}
             </h4>

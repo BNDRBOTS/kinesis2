@@ -5,6 +5,7 @@ import { Key, Eye, EyeOff, ExternalLink, ChevronDown, CheckCircle2, ShieldAlert,
 interface Props {
   apiKeys: ApiKeys;
   onChange: (keys: ApiKeys) => void;
+  serverKeys?: Partial<ApiKeys>;
 }
 
 interface ProviderField {
@@ -16,6 +17,7 @@ interface ProviderField {
 }
 
 const FIELDS: ProviderField[] = [
+  { key: "comfyCloud", label: "Comfy Cloud API Key", placeholder: "comfyui-… (or set COMFY_CLOUD_API_KEY on server)", docsUrl: "https://platform.comfy.org/profile/api-keys", badge: "Cloud GPUs · Paid API" },
   {
     key: "comfyui",
     label: "Local ComfyUI URL / Mode",
@@ -53,7 +55,7 @@ const FIELDS: ProviderField[] = [
   },
 ];
 
-export default function ApiKeyManager({ apiKeys, onChange }: Props) {
+export default function ApiKeyManager({ apiKeys, onChange, serverKeys = {} }: Props) {
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [isOpen, setIsOpen] = useState(false);
 
@@ -80,7 +82,7 @@ export default function ApiKeyManager({ apiKeys, onChange }: Props) {
     setIsOpen(false);
   };
 
-  const configuredCount = Object.values(apiKeys).filter(Boolean).length;
+  const configuredCount = FIELDS.filter(f => apiKeys[f.key] || serverKeys[f.key]).length;
 
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/90 shadow-xl backdrop-blur transition-all">
@@ -186,10 +188,10 @@ export default function ApiKeyManager({ apiKeys, onChange }: Props) {
                 </div>
 
                 <div className="flex items-center justify-between pt-1">
-                  {apiKeys[field.key] ? (
+                  {apiKeys[field.key] || serverKeys[field.key] ? (
                     <div className="flex items-center gap-1 text-xs font-medium text-emerald-400">
                       <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span>{apiKeys[field.key] === "__simulation__" || apiKeys[field.key]?.includes("mock") ? "Configured (Demo Mode)" : "Ready & Verified"}</span>
+                      <span>{apiKeys[field.key] === "__simulation__" || apiKeys[field.key]?.includes("mock") ? "Configured (Demo Mode)" : serverKeys[field.key] && !apiKeys[field.key] ? "Server configured (not live-verified)" : "Configured (not live-verified)"}</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1 text-xs text-neutral-500">
@@ -203,7 +205,7 @@ export default function ApiKeyManager({ apiKeys, onChange }: Props) {
           </div>
 
           <p className="text-xs text-neutral-500 leading-relaxed bg-neutral-950/80 p-3 rounded-lg border border-neutral-800/40">
-            🔒 <strong className="text-neutral-400">Security Note:</strong> All API tokens are encrypted and stored exclusively in your browser's local `localStorage`. They are never transmitted to any centralized database or intermediary server.
+            🔒 <strong className="text-neutral-400">Security Note:</strong> Keys entered here are stored unencrypted in this browser and sent to this application's proxy for provider requests. Use server-managed Railway variables on a password-protected deployment to avoid storing keys in the browser.
           </p>
         </div>
       )}

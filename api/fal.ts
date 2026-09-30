@@ -79,24 +79,8 @@ export default async function handler(req: Request) {
   } else if (baseHeader === 'run' || targetPath.startsWith('/fal-ai/') || targetPath.startsWith('/fal/')) {
     // queue.fal.run is canonical for queue, but fal.run also works
     baseUrl = 'https://queue.fal.run';
-  } else if (targetPath.startsWith('https://')) {
-    // Full URL provided
-    const targetUrl = targetPath;
-    try {
-      const res = await fetch(targetUrl, {
-        method: req.method,
-        headers: {
-          'Authorization': auth,
-          'Content-Type': 'application/json',
-        },
-        body,
-      });
-      const data = await res.text();
-      return jsonResponse(data, res.status, res.headers.get('Content-Type') || 'application/json');
-    } catch (err: any) {
-      return jsonResponse(JSON.stringify({ error: err?.message || 'Failed to fetch target' }), 502);
-    }
   }
+  if (!/^\/[a-zA-Z0-9_./?-]+$/.test(targetPath) || targetPath.includes('..') || targetPath.startsWith('//')) return jsonResponse(JSON.stringify({ error: 'Invalid targetPath' }), 400);
 
   // Normalize targetPath to start with /
   if (!targetPath.startsWith('/')) targetPath = '/' + targetPath;
@@ -106,6 +90,7 @@ export default async function handler(req: Request) {
   try {
     const res = await fetch(targetUrl, {
       method: req.method,
+      redirect: "error",
       headers: {
         'Authorization': auth,
         'Content-Type': 'application/json',

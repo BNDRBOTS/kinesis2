@@ -1,0 +1,179 @@
+{
+  "models": [
+    {
+      "id": "zimage",
+      "label": "Z-Image Turbo",
+      "model": "tongyi-mai/z-image-turbo",
+      "seed": true
+    },
+    {
+      "id": "flux",
+      "label": "Flux Schnell",
+      "model": "black-forest-labs/flux.1-schnell",
+      "seed": true
+    },
+    {
+      "id": "klein",
+      "label": "FLUX.2 Klein 4B",
+      "model": "black-forest-labs/flux.2-klein-4b",
+      "seed": true
+    },
+    {
+      "id": "gptimage",
+      "label": "GPT Image 1 Mini",
+      "model": "openai/gpt-image-1-mini",
+      "seed": false
+    },
+    {
+      "id": "grok",
+      "label": "Grok Imagine",
+      "model": "x-ai/grok-imagine-image",
+      "seed": false
+    },
+    {
+      "id": "qwen",
+      "label": "Qwen Image",
+      "model": "qwen/qwen-image",
+      "seed": false
+    },
+    {
+      "id": "wan",
+      "label": "Wan Image",
+      "model": "alibaba/wan-2.7-image",
+      "seed": false
+    }
+  ],
+  "shapes": {
+    "3:4": [
+      768,
+      1024
+    ],
+    "4:3": [
+      1024,
+      768
+    ],
+    "1:1": [
+      1024,
+      1024
+    ],
+    "9:16": [
+      576,
+      1024
+    ],
+    "16:9": [
+      1024,
+      576
+    ]
+  },
+  "styles": {
+    "No Style": "",
+    "Casual Photo": "natural candid photography, realistic lighting and textures",
+    "Painted Anime": "painted anime illustration, expressive character design, soft brushwork",
+    "Cyberpunk": "cyberpunk atmosphere, neon lighting, futuristic urban detail",
+    "Concept Art": "cinematic concept art, deliberate composition, atmospheric lighting",
+    "Digital Art": "digital illustration, considered colors, clean visual detail",
+    "3D Render": "polished 3D render, physically plausible materials and studio lighting",
+    "Oil Painting": "oil painting, visible brushwork and rich layered pigments",
+    "Watercolor": "watercolor painting, translucent washes and textured paper",
+    "Pencil Sketch": "pencil drawing, precise linework and graphite shading",
+    "Cartoon": "cartoon illustration, bold shapes and expressive features",
+    "Vintage Photo": "vintage film photograph, subtle grain and gently faded colors"
+  },
+  "presets": [
+    {
+      "id": "remove-objects",
+      "label": "Remove Unwanted Objects",
+      "prompt": "Remove the unwanted object described below and reconstruct the background naturally. Preserve everything else."
+    },
+    {
+      "id": "replace-background",
+      "label": "Replace the Background",
+      "prompt": "Replace the background as described below. Preserve the subject, edges, lighting consistency and identity."
+    },
+    {
+      "id": "headshot",
+      "label": "Professional Headshot",
+      "prompt": "Create a natural professional headshot of the same person, with flattering studio light and a clean background."
+    },
+    {
+      "id": "restore",
+      "label": "Restore an Old Photo",
+      "prompt": "Repair scratches, fading and damage, recover natural detail, and retain the original subjects and composition."
+    },
+    {
+      "id": "remove-background",
+      "label": "Remove the Background",
+      "prompt": "Isolate the subject on a clean plain studio backdrop. Preserve fine edges and subject details."
+    },
+    {
+      "id": "upscale",
+      "label": "Enhance Image Detail",
+      "prompt": "Improve clarity and natural detail without changing the scene or introducing new objects."
+    },
+    {
+      "id": "retouch",
+      "label": "Retouch a Portrait",
+      "prompt": "Subtly retouch small blemishes and distractions while retaining natural skin texture and the same identity."
+    },
+    {
+      "id": "edit-text",
+      "label": "Edit Text in an Image",
+      "prompt": "Replace the wording as described below while preserving the typography, layout, surface and perspective."
+    },
+    {
+      "id": "mirror-selfie",
+      "label": "Mirror Selfie Composition",
+      "prompt": "Recompose the same person as a natural mirror selfie with plausible reflection and perspective."
+    },
+    {
+      "id": "studio-portrait",
+      "label": "Studio Portrait",
+      "prompt": "Create an editorial studio portrait of the same person with professional lighting and natural proportions."
+    },
+    {
+      "id": "outfit",
+      "label": "Outfit Change",
+      "prompt": "Change the clothing as described below without changing the person or the setting."
+    },
+    {
+      "id": "pose",
+      "label": "Expression & Pose",
+      "prompt": "Give the same person a relaxed confident pose and a natural friendly expression."
+    },
+    {
+      "id": "athletic",
+      "label": "Athletic Portrait",
+      "prompt": "Create a natural healthy athletic portrait of the same adult, preserving identity and realistic proportions."
+    }
+  ],
+  "examples": [
+    {
+      "title": "Mountain landscape",
+      "prompt": "A vast snowy mountain range at sunrise, warm light grazing the peaks, crisp alpine air, wide cinematic composition.",
+      "style": "Casual Photo",
+      "model": "zimage",
+      "shape": "4:3"
+    },
+    {
+      "title": "Anime adventurer",
+      "prompt": "An expressive adult adventurer with a travel cloak and satchel, standing at the edge of a luminous fantasy forest.",
+      "style": "Painted Anime",
+      "model": "zimage",
+      "shape": "3:4"
+    },
+    {
+      "title": "Product hero",
+      "prompt": "A minimalist ceramic coffee cup on a pale studio surface, soft directional light, clean product composition.",
+      "style": "3D Render",
+      "model": "zimage",
+      "shape": "1:1"
+    },
+    {
+      "title": "Cozy interior",
+      "prompt": "A warm bohemian living room with plants, textured cushions and afternoon window light, welcoming lived-in details.",
+      "style": "No Style",
+      "model": "zimage",
+      "shape": "4:3"
+    }
+  ]
+}
