@@ -4,7 +4,7 @@ Image-to-video studio built with React/Vite and a single Node service. The exist
 
 ## Railway deployment
 
-1. Deploy this repository as **one Railway service**. `railway.json` installs dependencies, builds Vite, and starts the Node server on `0.0.0.0:$PORT`.
+1. Deploy this repository as **one Railway service**. Railpack installs dependencies once; `railway.json` builds Vite and starts the Node server on `0.0.0.0:$PORT`.
 2. Set **`APP_PASSWORD`** to a strong random password. Production startup requires it. Sign in with username **`kinesis`** and that password. This is a private, single-owner studio, not a multi-tenant SaaS.
 3. Configure any provider credentials in Railway Variables (never `VITE_*` variables):
    - `FAL_KEY`
@@ -17,6 +17,8 @@ Image-to-video studio built with React/Vite and a single Node service. The exist
 4. Generate a public Railway domain. `RAILWAY_PUBLIC_DOMAIN` is used for temporary image hosting; alternatively set `PUBLIC_BASE_URL=https://your-domain.example`. This allows Luma local-image/chained-frame inputs without another provider's storage key.
 5. Attach a Railway volume at `/data` and set **`MEDIA_DIR=/data`** to retain archived segments and stitched MP4s across redeployments. Without a volume, local outputs are ephemeral.
 6. Use one replica. The media worker permits two simultaneous operations. Budget RAM/disk for media workloads; generation itself runs on your configured provider, not Railway's CPU. `/healthz` is the public health check.
+
+Do not put `npm ci` in Railway’s build command: Railpack has already installed dependencies, and reinstalling during the build can fail with `EBUSY` on its mounted `node_modules/.vite` cache. Leave the build command as `npm run build`. Railpack includes development dependencies for the build; do not override its install settings to omit them. See [Railpack’s Node configuration](https://railpack.com/languages/node/).
 
 `npm start` runs `node server/index.mjs`. No global FFmpeg, Python, or undeclared runtime packages are needed: platform-specific FFmpeg/FFprobe binaries are installed from declared npm packages.
 
